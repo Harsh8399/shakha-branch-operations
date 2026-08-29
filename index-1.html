@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shakha — Branch Operations &amp; Daily Reporting Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --forest:#1F4A3D; --forest-2:#28604F; --paper:#F8F6F1; --surface:#FFFFFF;
+    --border:#E4E1D6; --text:#232922; --muted:#68715F;
+    --marigold:#B9700C; --marigold-bg:#FBF0DD;
+    --rust:#A6402B; --rust-bg:#FAEAE5;
+    --moss:#3F7D52; --moss-bg:#E9F3EB;
+    --slateblue:#35566B; --slateblue-bg:#E7EEF2;
+    --sand-bg:#F0EEE4;
+    --radius:8px; --radius-sm:5px;
+    --font-display:'Source Serif 4',Georgia,serif;
+    --font-ui:'Inter',system-ui,-apple-system,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;
+    --shadow:0 1px 2px rgba(31,74,61,.08), 0 1px 1px rgba(31,74,61,.05);
+    --shadow-md:0 10px 26px rgba(31,74,61,.16);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{ font-family:var(--font-ui); background:var(--paper); color:var(--text); -webkit-font-smoothing:antialiased; }
+  @media (prefers-reduced-motion: reduce){ *{ animation-duration:.001ms !important; transition-duration:.001ms !important; } }
+
+  .app{ display:flex; min-height:100vh; }
+  .sidebar{ width:230px; flex:0 0 230px; background:var(--forest); color:#DCEAE2; display:flex; flex-direction:column; position:sticky; top:0; height:100vh; }
+  .brand{ padding:22px 20px 16px; border-bottom:1px solid rgba(255,255,255,.12); }
+  .brand-mark{ font-family:var(--font-display); font-weight:600; font-size:22px; color:#fff; }
+  .brand-sub{ font-size:11.5px; color:#AFCBBC; margin-top:4px; line-height:1.4; }
+  .nav{ padding:14px 10px; flex:1; }
+  .nav-item{ display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:var(--radius-sm); font-size:13.5px; font-weight:500; color:#BFD9CB; cursor:pointer; margin-bottom:2px; border-left:3px solid transparent; transition:background .12s ease,color .12s ease; }
+  .nav-item:hover{ background:rgba(255,255,255,.08); color:#fff; }
+  .nav-item.active{ background:rgba(255,255,255,.11); color:#fff; border-left-color:var(--marigold); }
+  .nav-dot{ width:7px; height:7px; border-radius:50%; background:#5E8770; flex:0 0 auto; }
+  .nav-item.active .nav-dot{ background:var(--marigold); }
+  .sidebar-foot{ padding:16px 20px 20px; font-size:11px; color:#8FB4A0; border-top:1px solid rgba(255,255,255,.12); }
+
+  main{ flex:1; min-width:0; }
+  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:18px 28px; background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5; }
+  .topbar h1{ font-family:var(--font-display); font-size:19px; margin:0; font-weight:600; }
+  .topbar .sub{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .topbar-actions{ display:flex; gap:10px; align-items:center; }
+  .topbar-date{ font-size:12.5px; color:var(--muted); font-family:var(--font-mono); }
+
+  .view{ display:none; padding:24px 28px 60px; }
+  .view.active{ display:block; }
+
+  .btn{ font-family:var(--font-ui); font-size:13px; font-weight:600; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface); color:var(--text); padding:8px 14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:filter .12s ease, transform .05s ease; }
+  .btn:hover{ filter:brightness(0.97); }
+  .btn:active{ transform:translateY(1px); }
+  .btn-primary{ background:var(--forest); border-color:var(--forest); color:#fff; }
+  .btn-primary:hover{ background:var(--forest-2); }
+  .btn-danger{ background:var(--rust); border-color:var(--rust); color:#fff; }
+  .btn-ghost{ background:transparent; border-color:transparent; color:var(--muted); }
+  .btn-sm{ padding:5px 9px; font-size:12px; }
+  .btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .nav-item:focus-visible, .subtab:focus-visible{ outline:2px solid var(--forest); outline-offset:2px; }
+
+  /* Ledger tally strip — signature element */
+  .ledger-strip{ background:var(--surface); border:1px solid var(--border); border-top:3px double var(--forest); border-bottom:3px double var(--forest); border-radius:2px; display:flex; margin-bottom:20px; overflow-x:auto; }
+  .ledger-cell{ flex:1; min-width:130px; padding:14px 18px; border-right:1px dashed var(--border); text-align:center; }
+  .ledger-cell:last-child{ border-right:none; }
+  .ledger-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-weight:600; }
+  .ledger-value{ font-family:var(--font-display); font-size:26px; font-weight:600; color:var(--forest); margin-top:4px; }
+  .ledger-cell.warn .ledger-value{ color:var(--marigold); }
+  .ledger-cell.bad .ledger-value{ color:var(--rust); }
+  .ledger-cell.good .ledger-value{ color:var(--moss); }
+
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+  .panel-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .panel-head h2{ font-family:var(--font-display); font-size:15px; margin:0; font-weight:600; }
+  .panel-body{ padding:16px 18px; }
+  .charts-row{ display:grid; grid-template-columns:1.1fr .9fr; gap:14px; margin-bottom:20px; }
+  .chart-wrap{ height:230px; }
+  .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+
+  .toolbar{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
+  .toolbar input[type="text"], .toolbar select, .toolbar input[type="date"]{ font-family:var(--font-ui); font-size:13px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); }
+  .toolbar input[type="text"]{ min-width:220px; }
+  .spacer{ flex:1; }
+
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  thead th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:9px 10px; border-bottom:1px solid var(--border); cursor:pointer; white-space:nowrap; user-select:none; }
+  thead th:hover{ color:var(--text); }
+  thead th.sorted::after{ content:" ▾"; color:var(--forest); }
+  thead th.sorted.asc::after{ content:" ▴"; }
+  tbody td{ padding:10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tbody tr:hover{ background:#FBFAF6; }
+  .id-cell{ font-family:var(--font-mono); font-size:12px; color:var(--muted); }
+  .row-actions{ display:flex; gap:6px; }
+
+  .badge{ display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; letter-spacing:.02em; }
+  .badge.status-pending{ background:var(--marigold-bg); color:var(--marigold); }
+  .badge.status-inprogress{ background:var(--slateblue-bg); color:var(--slateblue); }
+  .badge.status-completed{ background:var(--moss-bg); color:var(--moss); }
+  .badge.status-overdue{ background:var(--rust-bg); color:var(--rust); }
+  .pri{ display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:600; }
+  .pri::before{ content:""; width:7px; height:7px; border-radius:50%; }
+  .pri.High::before{ background:var(--rust); }
+  .pri.Medium::before{ background:var(--marigold); }
+  .pri.Low::before{ background:var(--muted); }
+
+  /* Workload gauge — signature element */
+  .gauge{ height:9px; border-radius:5px; background:var(--sand-bg); overflow:hidden; position:relative;
+    background-image:repeating-linear-gradient(90deg, var(--sand-bg) 0 9%, #EAE6D8 9% 10%); }
+  .gauge-fill{ height:100%; border-radius:5px; background:var(--moss); }
+  .gauge-fill.warn{ background:var(--marigold); }
+  .gauge-fill.bad{ background:var(--rust); }
+  .team-card{ border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:10px; }
+  .team-card:last-child{ margin-bottom:0; }
+  .team-name{ font-weight:600; font-size:13.5px; display:flex; justify-content:space-between; }
+  .team-meta{ font-size:11.5px; color:var(--muted); margin:5px 0 7px; }
+
+  .empty-state{ text-align:center; padding:40px 20px; color:var(--muted); }
+  .empty-state .em-icon{ font-size:26px; margin-bottom:8px; }
+
+  .overlay{ position:fixed; inset:0; background:rgba(20,30,24,.45); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:50; overflow-y:auto; }
+  .overlay.open{ display:flex; }
+  .modal{ background:var(--surface); border-radius:var(--radius); width:100%; max-width:540px; box-shadow:var(--shadow-md); }
+  .modal-head{ padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+  .modal-head h3{ margin:0; font-size:15px; font-family:var(--font-display); }
+  .modal-close{ cursor:pointer; color:var(--muted); background:none; border:none; font-size:18px; }
+  .modal-body{ padding:18px 20px; }
+  .modal-foot{ padding:14px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:12.5px; font-weight:600; margin-bottom:5px; }
+  .field .req{ color:var(--rust); }
+  .field input, .field select, .field textarea{ width:100%; font-family:var(--font-ui); font-size:13.5px; padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--paper); color:var(--text); }
+  .field textarea{ resize:vertical; min-height:60px; }
+  .field .err{ color:var(--rust); font-size:11.5px; margin-top:4px; display:none; }
+  .field.invalid input, .field.invalid select, .field.invalid textarea{ border-color:var(--rust); background:var(--rust-bg); }
+  .field.invalid .err{ display:block; }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .field-row3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+
+  #toast-container{ position:fixed; bottom:20px; right:20px; display:flex; flex-direction:column; gap:8px; z-index:100; }
+  .toast{ background:var(--forest); color:#fff; padding:11px 16px; border-radius:var(--radius-sm); font-size:13px; box-shadow:var(--shadow-md); display:flex; align-items:center; gap:8px; min-width:220px; animation:toastIn .18s ease-out; }
+  .toast.success{ background:var(--moss); }
+  .toast.error{ background:var(--rust); }
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  .subtabs{ display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+  .subtab{ padding:7px 13px; border-radius:20px; font-size:12.5px; font-weight:600; border:1px solid var(--border); background:var(--surface); cursor:pointer; color:var(--muted); }
+  .subtab.active{ background:var(--forest); border-color:var(--forest); color:#fff; }
+
+  footer.note{ font-size:11.5px; color:var(--muted); padding:16px 28px 30px; }
+
+  @media (max-width: 980px){ .charts-row, .grid-2{ grid-template-columns:1fr; } .ledger-cell{ min-width:110px; } }
+  @media (max-width: 720px){
+    .sidebar{ position:fixed; z-index:40; transform:translateX(-100%); transition:transform .2s ease; }
+    .sidebar.open{ transform:translateX(0); }
+    .topbar{ padding:14px 16px; } .view{ padding:16px 16px 50px; }
+    .field-row, .field-row3{ grid-template-columns:1fr; }
+    .menu-toggle{ display:inline-flex !important; }
+  }
+  .menu-toggle{ display:none; }
+
+  @media print{
+    .sidebar, .topbar-actions, .toolbar, .row-actions, .menu-toggle, .subtabs{ display:none !important; }
+    body{ background:#fff; }
+    .view{ display:block !important; padding:0; }
+    .panel{ box-shadow:none; border:1px solid #999; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">Shakha</div>
+      <div class="brand-sub">Branch Operations &amp;<br>Daily Reporting Dashboard</div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-item active" data-view="dashboard" tabindex="0"><span class="nav-dot"></span>Dashboard</div>
+      <div class="nav-item" data-view="tasks" tabindex="0"><span class="nav-dot"></span>Tasks &amp; Operations</div>
+      <div class="nav-item" data-view="team" tabindex="0"><span class="nav-dot"></span>Team Coordination</div>
+      <div class="nav-item" data-view="dailyreport" tabindex="0"><span class="nav-dot"></span>Daily Work Report</div>
+      <div class="nav-item" data-view="reports" tabindex="0"><span class="nav-dot"></span>Reports</div>
+    </nav>
+    <div class="sidebar-foot">Demo branch data · runs locally in<br>your browser via localStorage.</div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn btn-ghost menu-toggle" id="menuToggle">☰</button>
+        <div><h1 id="pageTitle">Dashboard</h1><div class="sub" id="pageSub">Today's branch snapshot</div></div>
+      </div>
+      <div class="topbar-actions">
+        <span class="topbar-date" id="topDate"></span>
+        <button class="btn btn-sm" id="resetDataBtn">Reset sample data</button>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section class="view active" id="view-dashboard">
+      <div class="ledger-strip" id="ledgerStrip"></div>
+      <div class="charts-row">
+        <div class="panel">
+          <div class="panel-head"><h2>Team workload — active tasks</h2></div>
+          <div class="panel-body chart-wrap"><canvas id="chartWorkload"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Task status split</h2></div>
+          <div class="panel-body chart-wrap"><canvas id="chartStatusSplit"></canvas></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Today's task list</h2></div>
+        <div class="panel-body" id="dashTodayTasks"></div>
+      </div>
+    </section>
+
+    <!-- TASKS -->
+    <section class="view" id="view-tasks">
+      <div class="toolbar">
+        <input type="text" id="tskSearch" placeholder="Search by task or ID…">
+        <select id="tskStatusFilter">
+          <option value="">All statuses</option>
+          <option value="Pending">Pending</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+          <option value="Overdue">Overdue</option>
+        </select>
+        <select id="tskPriorityFilter"><option value="">All priorities</option><option>High</option><option>Medium</option><option>Low</option></select>
+        <select id="tskAssignedFilter"><option value="">All team members</option></select>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" id="addTaskBtn">+ New task</button>
+      </div>
+      <div class="panel">
+        <div class="panel-body" style="overflow-x:auto;">
+          <table id="tasksTable">
+            <thead><tr>
+              <th data-key="id">Task ID</th><th data-key="description">Description</th><th data-key="assignedTo">Assigned</th>
+              <th data-key="priority">Priority</th><th data-key="date">Date</th><th data-key="deadline">Deadline</th>
+              <th data-key="status">Status</th><th data-key="remarks">Remarks</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="tasksTbody"></tbody>
+          </table>
+          <div class="empty-state" id="tasksEmpty" style="display:none;"><div class="em-icon">◧</div>No tasks match these filters.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TEAM -->
+    <section class="view" id="view-team">
+      <div class="panel">
+        <div class="panel-head"><h2>Team coordination</h2><span style="font-size:12px;color:var(--muted);">Workload = active (pending + in-progress) tasks</span></div>
+        <div class="panel-body" id="teamList"></div>
+      </div>
+    </section>
+
+    <!-- DAILY REPORT -->
+    <section class="view" id="view-dailyreport">
+      <div class="grid-2" style="align-items:start;">
+        <div class="panel">
+          <div class="panel-head"><h2>Log today's work</h2></div>
+          <div class="panel-body">
+            <form id="dailyForm" novalidate>
+              <div class="field" id="f-drDate"><label>Date <span class="req">*</span></label><input type="date" id="drDate"><div class="err">Date is required.</div></div>
+              <div class="field-row">
+                <div class="field" id="f-drRecords"><label>Records processed <span class="req">*</span></label><input type="number" min="0" id="drRecords"><div class="err">Enter a valid non-negative number.</div></div>
+                <div class="field" id="f-drDocs"><label>Documents verified <span class="req">*</span></label><input type="number" min="0" id="drDocs"><div class="err">Enter a valid non-negative number.</div></div>
+              </div>
+              <div class="field-row">
+                <div class="field" id="f-drCalls"><label>Calls / emails handled <span class="req">*</span></label><input type="number" min="0" id="drCalls"><div class="err">Enter a valid non-negative number.</div></div>
+                <div class="field" id="f-drTasksDone"><label>Tasks completed <span class="req">*</span></label><input type="number" min="0" id="drTasksDone"><div class="err">Enter a valid non-negative number.</div></div>
+              </div>
+              <div class="field" id="f-drPending"><label>Pending work (count) <span class="req">*</span></label><input type="number" min="0" id="drPending"><div class="err">Enter a valid non-negative number.</div></div>
+              <div class="field"><label>Remarks</label><textarea id="drRemarks" placeholder="Optional notes about today's shift"></textarea></div>
+              <button type="button" class="btn btn-primary" id="saveDailyBtn" style="width:100%;justify-content:center;">Save daily report</button>
+            </form>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Automatic summary</h2></div>
+          <div class="panel-body">
+            <div class="ledger-strip" id="summaryStrip" style="margin-bottom:16px;"></div>
+            <div class="chart-wrap" style="height:190px;"><canvas id="chartTrend"></canvas></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px;">
+        <div class="panel-head"><h2>Daily report history</h2></div>
+        <div class="panel-body" style="overflow-x:auto;">
+          <table id="dailyTable">
+            <thead><tr><th>Date</th><th>Records</th><th>Docs verified</th><th>Calls/emails</th><th>Tasks completed</th><th>Pending</th><th>Remarks</th><th>Actions</th></tr></thead>
+            <tbody id="dailyTbody"></tbody>
+          </table>
+          <div class="empty-state" id="dailyEmpty" style="display:none;"><div class="em-icon">◧</div>No daily reports logged yet.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORTS -->
+    <section class="view" id="view-reports">
+      <div class="subtabs" id="reportSubtabs">
+        <button class="subtab active" data-rep="daily">Daily</button>
+        <button class="subtab" data-rep="weekly">Weekly</button>
+        <button class="subtab" data-rep="team">Team-wise</button>
+        <button class="subtab" data-rep="status">Status-wise</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2 id="reportPanelTitle">Daily report</h2>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-sm" id="exportCsvBtn">Export CSV</button>
+            <button class="btn btn-sm" id="exportPdfBtn">Export PDF summary</button>
+            <button class="btn btn-sm" id="printBtn">Print</button>
+          </div>
+        </div>
+        <div class="panel-body" style="overflow-x:auto;" id="reportBody"></div>
+      </div>
+      <footer class="note">Print uses your browser's print dialog (choose "Save as PDF" for a full print-friendly report). "Export PDF summary" generates a quick one-page summary directly.</footer>
+    </section>
+  </main>
+</div>
+
+<!-- Task modal -->
+<div class="overlay" id="taskOverlay">
+  <div class="modal">
+    <div class="modal-head"><h3 id="taskModalTitle">New task</h3><button class="modal-close" data-close>✕</button></div>
+    <div class="modal-body">
+      <form id="taskForm" novalidate>
+        <input type="hidden" id="tskId">
+        <div class="field" id="f-tskDesc"><label>Task description <span class="req">*</span></label><input type="text" id="tskDesc" placeholder="e.g. Verify KYC documents — loan file #2291"><div class="err">Description is required.</div></div>
+        <div class="field-row">
+          <div class="field" id="f-tskAssigned"><label>Assigned person <span class="req">*</span></label>
+            <select id="tskAssigned"><option value="">Select…</option></select>
+            <div class="err">Please assign a team member.</div>
+          </div>
+          <div class="field" id="f-tskPriority"><label>Priority <span class="req">*</span></label>
+            <select id="tskPriority"><option value="">Select…</option><option>High</option><option>Medium</option><option>Low</option></select>
+            <div class="err">Please select a priority.</div>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field" id="f-tskDate"><label>Date <span class="req">*</span></label><input type="date" id="tskDate"><div class="err">Date is required.</div></div>
+          <div class="field" id="f-tskDeadline"><label>Deadline <span class="req">*</span></label><input type="date" id="tskDeadline"><div class="err">Deadline must be on/after the task date.</div></div>
+        </div>
+        <div class="field" id="f-tskStatus"><label>Status <span class="req">*</span></label>
+          <select id="tskStatus"><option value="">Select…</option><option>Pending</option><option>In Progress</option><option>Completed</option></select>
+          <div class="err">Please select a status.</div>
+        </div>
+        <div class="field"><label>Remarks</label><textarea id="tskRemarks" placeholder="Optional notes"></textarea></div>
+      </form>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="saveTaskBtn">Save task</button></div>
+  </div>
+</div>
+
+<!-- Confirm delete -->
+<div class="overlay" id="confirmOverlay">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-head"><h3>Delete this entry?</h3><button class="modal-close" data-close>✕</button></div>
+    <div class="modal-body"><p id="confirmText" style="margin:0;font-size:13.5px;color:var(--muted);">This action cannot be undone.</p></div>
+    <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn btn-danger" id="confirmDeleteBtn">Delete</button></div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+/* ============================================================
+   Shakha — Branch Operations & Daily Reporting Dashboard
+   Vanilla JS + localStorage, no build step.
+   ============================================================ */
+
+const LS_TASKS='shakha_tasks', LS_DAILY='shakha_daily', LS_SEEDED='shakha_seeded_v1';
+const TEAM = ['Ashwini Bhosale','Rahul Wagh','Snehal Gaikwad','Nitin Suryawanshi','Pooja Kale','Abhijeet Shelke'];
+
+let tasks = [];
+let dailyReports = [];
+let tskSort = { key:'deadline', dir:'asc' };
+let workloadChart, statusSplitChart, trendChart;
+let currentReportTab = 'daily';
+
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function d(offset){ const t=new Date(); t.setDate(t.getDate()-offset); return t.toISOString().slice(0,10); }
+function dPlus(offset){ const t=new Date(); t.setDate(t.getDate()+offset); return t.toISOString().slice(0,10); }
+
+function seedData(){
+  tasks = [
+    { id:'TSK-3001', description:'Verify KYC documents — retail loan file #2291', assignedTo:'Ashwini Bhosale', priority:'High', date:d(1), deadline:d(0), status:'In Progress', remarks:'Awaiting address proof' },
+    { id:'TSK-3002', description:'Reconcile cash drawer — counter 2', assignedTo:'Rahul Wagh', priority:'High', date:d(0), deadline:d(0), status:'Pending', remarks:'' },
+    { id:'TSK-3003', description:'Process NEFT/RTGS batch — morning cycle', assignedTo:'Snehal Gaikwad', priority:'Medium', date:d(0), deadline:d(0), status:'Completed', remarks:'' },
+    { id:'TSK-3004', description:'Follow up pending cheque clearance', assignedTo:'Nitin Suryawanshi', priority:'Medium', date:d(2), deadline:d(1), status:'Pending', remarks:'Customer unreachable, retry tomorrow' },
+    { id:'TSK-3005', description:'Update customer complaint register', assignedTo:'Pooja Kale', priority:'Low', date:d(0), deadline:dPlus(1), status:'In Progress', remarks:'' },
+    { id:'TSK-3006', description:'File daily branch attendance report', assignedTo:'Abhijeet Shelke', priority:'Medium', date:d(0), deadline:d(0), status:'Completed', remarks:'' },
+    { id:'TSK-3007', description:'Coordinate courier pickup — HO documents', assignedTo:'Rahul Wagh', priority:'Low', date:d(0), deadline:dPlus(0), status:'Pending', remarks:'' },
+    { id:'TSK-3008', description:'Data entry — new SB account forms (12 forms)', assignedTo:'Ashwini Bhosale', priority:'High', date:d(0), deadline:dPlus(0), status:'In Progress', remarks:'' },
+    { id:'TSK-3009', description:'Verify signature mismatch — withdrawal slip', assignedTo:'Snehal Gaikwad', priority:'High', date:d(3), deadline:d(2), status:'Pending', remarks:'Escalated to branch manager' },
+    { id:'TSK-3010', description:'Prepare weekly stationery stock report', assignedTo:'Pooja Kale', priority:'Low', date:d(1), deadline:dPlus(2), status:'Pending', remarks:'' },
+    { id:'TSK-3011', description:'Scan and archive closed loan files', assignedTo:'Nitin Suryawanshi', priority:'Medium', date:d(4), deadline:d(3), status:'Completed', remarks:'' },
+    { id:'TSK-3012', description:'Assist walk-in customers — passbook printing', assignedTo:'Abhijeet Shelke', priority:'Medium', date:d(0), deadline:dPlus(0), status:'In Progress', remarks:'' },
+  ];
+
+  dailyReports = [
+    { id:'DR-1', date:d(4), recordsProcessed:38, docsVerified:14, callsEmailsHandled:22, tasksCompleted:9, pendingWork:4, remarks:'Normal working day' },
+    { id:'DR-2', date:d(3), recordsProcessed:41, docsVerified:17, callsEmailsHandled:19, tasksCompleted:8, pendingWork:5, remarks:'Slight backlog in KYC verification' },
+    { id:'DR-3', date:d(2), recordsProcessed:35, docsVerified:12, callsEmailsHandled:25, tasksCompleted:10, pendingWork:3, remarks:'' },
+    { id:'DR-4', date:d(1), recordsProcessed:44, docsVerified:19, callsEmailsHandled:21, tasksCompleted:11, pendingWork:4, remarks:'Heavy NEFT batch in the morning' },
+  ];
+  save();
+}
+function save(){ localStorage.setItem(LS_TASKS, JSON.stringify(tasks)); localStorage.setItem(LS_DAILY, JSON.stringify(dailyReports)); }
+function load(){
+  if(!localStorage.getItem(LS_SEEDED)){ seedData(); localStorage.setItem(LS_SEEDED,'1'); }
+  else { tasks = JSON.parse(localStorage.getItem(LS_TASKS)||'[]'); dailyReports = JSON.parse(localStorage.getItem(LS_DAILY)||'[]'); }
+}
+function nextId(prefix, list){
+  const nums = list.map(x => parseInt(String(x.id).split('-')[1],10)).filter(n=>!isNaN(n));
+  const max = nums.length ? Math.max(...nums) : (prefix==='TSK'?3000:0);
+  return prefix+'-'+(max+1);
+}
+function isOverdue(t){ return t.status !== 'Completed' && t.deadline < todayStr(); }
+function displayStatus(t){ return isOverdue(t) ? 'Overdue' : t.status; }
+function statusClass(s){ return { 'Pending':'status-pending','In Progress':'status-inprogress','Completed':'status-completed','Overdue':'status-overdue' }[s] || ''; }
+
+function toast(msg, type=''){
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div'); el.className = 'toast '+type; el.textContent = msg;
+  c.appendChild(el); setTimeout(()=>el.remove(), 3200);
+}
+
+/* ---------- Navigation ---------- */
+const views = ['dashboard','tasks','team','dailyreport','reports'];
+const titles = {
+  dashboard:['Dashboard',"Today's branch snapshot"],
+  tasks:['Tasks & Operations','Branch task register — assign, track, close'],
+  team:['Team Coordination','Workload distribution across the branch team'],
+  dailyreport:['Daily Work Report','Log today\'s throughput and see the trend'],
+  reports:['Reports','Daily, weekly, team-wise and status-wise views'],
+};
+function goTo(view){
+  views.forEach(v=>document.getElementById('view-'+v).classList.toggle('active', v===view));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.view===view));
+  document.getElementById('pageTitle').textContent = titles[view][0];
+  document.getElementById('pageSub').textContent = titles[view][1];
+  document.getElementById('sidebar').classList.remove('open');
+  if(view==='dashboard') renderDashboard();
+  if(view==='tasks') renderTasks();
+  if(view==='team') renderTeam();
+  if(view==='dailyreport') renderDailyReport();
+  if(view==='reports') renderReportsView();
+}
+document.getElementById('nav').addEventListener('click', e=>{ const it=e.target.closest('.nav-item'); if(it) goTo(it.dataset.view); });
+document.getElementById('nav').addEventListener('keydown', e=>{ if((e.key==='Enter'||e.key===' ') && e.target.classList.contains('nav-item')){ e.preventDefault(); goTo(e.target.dataset.view);} });
+document.getElementById('menuToggle').addEventListener('click', ()=>document.getElementById('sidebar').classList.toggle('open'));
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function renderDashboard(){
+  const today = todayStr();
+  const todays = tasks.filter(t=>t.date===today || t.deadline===today);
+  const completed = tasks.filter(t=>t.status==='Completed').length;
+  const pending = tasks.filter(t=>t.status!=='Completed' && !isOverdue(t)).length;
+  const overdue = tasks.filter(isOverdue).length;
+  const recordsToday = dailyReports.find(r=>r.date===today);
+
+  const cells = [
+    { label:"Today's tasks", value: todays.length, cls:'' },
+    { label:'Completed', value: completed, cls:'good' },
+    { label:'Pending', value: pending, cls:'warn' },
+    { label:'Overdue', value: overdue, cls: overdue>0 ? 'bad' : '' },
+    { label:'Records processed today', value: recordsToday ? recordsToday.recordsProcessed : 0, cls:'' },
+  ];
+  document.getElementById('ledgerStrip').innerHTML = cells.map(c=>`
+    <div class="ledger-cell ${c.cls}"><div class="ledger-label">${c.label}</div><div class="ledger-value">${c.value}</div></div>`).join('');
+
+  const list = document.getElementById('dashTodayTasks');
+  list.innerHTML = todays.slice(0,8).map(t=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px;">
+      <span><b>${t.id}</b> — ${t.description} <span class="pri ${t.priority}" style="margin-left:8px;">${t.priority}</span></span>
+      <span class="badge ${statusClass(displayStatus(t))}">${displayStatus(t)}</span>
+    </div>`).join('') || '<div class="empty-state">No tasks scheduled for today.</div>';
+
+  renderDashboardCharts();
+}
+
+function renderDashboardCharts(){
+  const workload = TEAM.map(name => tasks.filter(t=>t.assignedTo===name && t.status!=='Completed').length);
+  if(workloadChart) workloadChart.destroy();
+  workloadChart = new Chart(document.getElementById('chartWorkload').getContext('2d'), {
+    type:'bar',
+    data:{ labels:TEAM, datasets:[{ data:workload, backgroundColor:'#1F4A3D', borderRadius:4, maxBarThickness:26 }] },
+    options:{ indexAxis:'y', plugins:{legend:{display:false}},
+      scales:{ x:{ ticks:{stepSize:1, font:{size:10}}, grid:{color:'#EFECE0'} }, y:{ ticks:{font:{family:'Inter', size:10.5}}, grid:{display:false} } },
+      maintainAspectRatio:false }
+  });
+
+  const statusCounts = { 'Pending':0,'In Progress':0,'Completed':0,'Overdue':0 };
+  tasks.forEach(t => statusCounts[displayStatus(t)] = (statusCounts[displayStatus(t)]||0)+1);
+  if(statusSplitChart) statusSplitChart.destroy();
+  statusSplitChart = new Chart(document.getElementById('chartStatusSplit').getContext('2d'), {
+    type:'doughnut',
+    data:{ labels:Object.keys(statusCounts), datasets:[{ data:Object.values(statusCounts), backgroundColor:['#B9700C','#35566B','#3F7D52','#A6402B'], borderWidth:0 }] },
+    options:{ plugins:{ legend:{ position:'bottom', labels:{font:{family:'Inter', size:11}, boxWidth:10, padding:12} } }, maintainAspectRatio:false }
+  });
+}
+
+/* ============================================================
+   TASKS
+   ============================================================ */
+function populateAssignedFilter(){
+  const sel = document.getElementById('tskAssignedFilter');
+  sel.innerHTML = '<option value="">All team members</option>' + TEAM.map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+function getFilteredTasks(){
+  const q = document.getElementById('tskSearch').value.trim().toLowerCase();
+  const status = document.getElementById('tskStatusFilter').value;
+  const priority = document.getElementById('tskPriorityFilter').value;
+  const assigned = document.getElementById('tskAssignedFilter').value;
+  let list = tasks.filter(t=>{
+    const matchQ = !q || t.description.toLowerCase().includes(q) || t.id.toLowerCase().includes(q);
+    const matchStatus = !status || displayStatus(t)===status;
+    const matchPriority = !priority || t.priority===priority;
+    const matchAssigned = !assigned || t.assignedTo===assigned;
+    return matchQ && matchStatus && matchPriority && matchAssigned;
+  });
+  list.sort((a,b)=>{
+    let va=a[tskSort.key], vb=b[tskSort.key];
+    if(va<vb) return tskSort.dir==='asc'?-1:1;
+    if(va>vb) return tskSort.dir==='asc'?1:-1;
+    return 0;
+  });
+  return list;
+}
+function renderTasks(){
+  populateAssignedFilter();
+  const list = getFilteredTasks();
+  document.getElementById('tasksEmpty').style.display = list.length ? 'none':'block';
+  document.getElementById('tasksTbody').innerHTML = list.map(t=>`
+    <tr>
+      <td class="id-cell">${t.id}</td>
+      <td>${t.description}</td>
+      <td>${t.assignedTo}</td>
+      <td><span class="pri ${t.priority}">${t.priority}</span></td>
+      <td>${t.date}</td>
+      <td>${t.deadline}</td>
+      <td><span class="badge ${statusClass(displayStatus(t))}">${displayStatus(t)}</span></td>
+      <td style="max-width:160px;color:var(--muted);font-size:12px;">${t.remarks||'—'}</td>
+      <td class="row-actions">
+        <button class="btn btn-sm" data-edit-tsk="${t.id}">Edit</button>
+        <button class="btn btn-sm btn-ghost" data-del-tsk="${t.id}" style="color:var(--rust)">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+['tskSearch','tskStatusFilter','tskPriorityFilter','tskAssignedFilter'].forEach(id=>document.getElementById(id).addEventListener('input', renderTasks));
+document.querySelector('#tasksTable thead').addEventListener('click', e=>{
+  const th = e.target.closest('th[data-key]'); if(!th) return;
+  if(tskSort.key===th.dataset.key) tskSort.dir = tskSort.dir==='asc'?'desc':'asc';
+  else { tskSort.key = th.dataset.key; tskSort.dir='asc'; }
+  renderTasks();
+});
+document.getElementById('tasksTbody').addEventListener('click', e=>{
+  const editId=e.target.dataset.editTsk, delId=e.target.dataset.delTsk;
+  if(editId) openTaskModal(tasks.find(t=>t.id===editId));
+  if(delId) openConfirm('task', delId);
+});
+
+function populateAssignedSelect(){
+  const sel = document.getElementById('tskAssigned');
+  sel.innerHTML = '<option value="">Select…</option>' + TEAM.map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+const taskFields = ['tskDesc','tskAssigned','tskPriority','tskDate','tskDeadline','tskStatus'];
+function openTaskModal(task){
+  populateAssignedSelect();
+  document.getElementById('taskForm').reset();
+  taskFields.forEach(f=>document.getElementById('f-'+f)?.classList.remove('invalid'));
+  document.getElementById('tskId').value = task ? task.id : '';
+  document.getElementById('taskModalTitle').textContent = task ? 'Edit task — '+task.id : 'New task';
+  if(task){
+    document.getElementById('tskDesc').value = task.description;
+    document.getElementById('tskAssigned').value = task.assignedTo;
+    document.getElementById('tskPriority').value = task.priority;
+    document.getElementById('tskDate').value = task.date;
+    document.getElementById('tskDeadline').value = task.deadline;
+    document.getElementById('tskStatus').value = task.status;
+    document.getElementById('tskRemarks').value = task.remarks || '';
+  } else {
+    document.getElementById('tskDate').value = todayStr();
+    document.getElementById('tskDeadline').value = todayStr();
+  }
+  document.getElementById('taskOverlay').classList.add('open');
+}
+function validateTaskForm(){
+  let valid = true;
+  const desc = document.getElementById('tskDesc').value.trim();
+  const assigned = document.getElementById('tskAssigned').value;
+  const priority = document.getElementById('tskPriority').value;
+  const date = document.getElementById('tskDate').value;
+  const deadline = document.getElementById('tskDeadline').value;
+  const status = document.getElementById('tskStatus').value;
+  const setValid=(id,ok)=>document.getElementById('f-'+id).classList.toggle('invalid', !ok);
+  setValid('tskDesc', !!desc); valid = valid && !!desc;
+  setValid('tskAssigned', !!assigned); valid = valid && !!assigned;
+  setValid('tskPriority', !!priority); valid = valid && !!priority;
+  setValid('tskDate', !!date); valid = valid && !!date;
+  const deadlineOk = !!deadline && !!date && deadline >= date;
+  setValid('tskDeadline', deadlineOk); valid = valid && deadlineOk;
+  setValid('tskStatus', !!status); valid = valid && !!status;
+  return valid;
+}
+document.getElementById('saveTaskBtn').addEventListener('click', ()=>{
+  if(!validateTaskForm()){ toast('Please fix the highlighted fields.', 'error'); return; }
+  const id = document.getElementById('tskId').value;
+  const data = {
+    description: document.getElementById('tskDesc').value.trim(),
+    assignedTo: document.getElementById('tskAssigned').value,
+    priority: document.getElementById('tskPriority').value,
+    date: document.getElementById('tskDate').value,
+    deadline: document.getElementById('tskDeadline').value,
+    status: document.getElementById('tskStatus').value,
+    remarks: document.getElementById('tskRemarks').value.trim(),
+  };
+  if(id){ const idx=tasks.findIndex(t=>t.id===id); tasks[idx] = {...tasks[idx], ...data}; toast('Task updated successfully.', 'success'); }
+  else { const newId=nextId('TSK', tasks); tasks.unshift({id:newId, ...data}); toast('Task added successfully.', 'success'); }
+  save(); closeOverlays(); renderTasks(); renderDashboard();
+});
+document.getElementById('addTaskBtn').addEventListener('click', ()=>openTaskModal(null));
+
+/* ---------- Delete confirm (shared) ---------- */
+let pendingDelete = null;
+function openConfirm(kind, id){
+  pendingDelete = {kind, id};
+  document.getElementById('confirmText').textContent = kind==='task' ? `Task ${id} will be permanently removed.` : `Daily report entry ${id} will be permanently removed.`;
+  document.getElementById('confirmOverlay').classList.add('open');
+}
+document.getElementById('confirmDeleteBtn').addEventListener('click', ()=>{
+  if(!pendingDelete) return;
+  if(pendingDelete.kind==='task'){ tasks = tasks.filter(t=>t.id!==pendingDelete.id); renderTasks(); }
+  else { dailyReports = dailyReports.filter(r=>r.id!==pendingDelete.id); renderDailyReport(); }
+  save(); closeOverlays(); renderDashboard();
+  toast('Deleted successfully.', 'success'); pendingDelete = null;
+});
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeOverlays));
+document.querySelectorAll('.overlay').forEach(ov=>ov.addEventListener('click', e=>{ if(e.target===ov) closeOverlays(); }));
+function closeOverlays(){ document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('open')); }
+
+/* ============================================================
+   TEAM COORDINATION
+   ============================================================ */
+function renderTeam(){
+  const html = TEAM.map(name=>{
+    const assigned = tasks.filter(t=>t.assignedTo===name);
+    const completed = assigned.filter(t=>t.status==='Completed').length;
+    const active = assigned.filter(t=>t.status!=='Completed').length;
+    const pct = assigned.length ? Math.round((active/Math.max(assigned.length,1))*100) : 0;
+    const cls = pct>=75 ? 'bad' : pct>=45 ? 'warn' : '';
+    return `<div class="team-card">
+      <div class="team-name"><span>${name}</span><span style="font-family:var(--font-mono);font-size:12px;color:var(--muted);">${active} active / ${assigned.length} total</span></div>
+      <div class="team-meta">${completed} completed · ${active} pending or in progress</div>
+      <div class="gauge"><div class="gauge-fill ${cls}" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+  document.getElementById('teamList').innerHTML = html;
+}
+
+/* ============================================================
+   DAILY WORK REPORT
+   ============================================================ */
+function renderDailyReport(){
+  document.getElementById('drDate').value = document.getElementById('drDate').value || todayStr();
+  const sorted = [...dailyReports].sort((a,b)=> a.date < b.date ? 1 : -1);
+  document.getElementById('dailyEmpty').style.display = sorted.length ? 'none':'block';
+  document.getElementById('dailyTbody').innerHTML = sorted.map(r=>`
+    <tr>
+      <td>${r.date}</td><td>${r.recordsProcessed}</td><td>${r.docsVerified}</td><td>${r.callsEmailsHandled}</td>
+      <td>${r.tasksCompleted}</td><td>${r.pendingWork}</td>
+      <td style="max-width:160px;color:var(--muted);font-size:12px;">${r.remarks||'—'}</td>
+      <td class="row-actions">
+        <button class="btn btn-sm" data-edit-dr="${r.id}">Edit</button>
+        <button class="btn btn-sm btn-ghost" data-del-dr="${r.id}" style="color:var(--rust)">Delete</button>
+      </td>
+    </tr>`).join('');
+
+  const totalCompleted = dailyReports.reduce((s,r)=>s+Number(r.tasksCompleted),0);
+  const totalPending = dailyReports.reduce((s,r)=>s+Number(r.pendingWork),0);
+  const rate = (totalCompleted+totalPending) ? Math.round((totalCompleted/(totalCompleted+totalPending))*100) : 0;
+  const trendUp = dailyReports.length>=2 && dailyReports[dailyReports.length-1].tasksCompleted >= dailyReports[dailyReports.length-2].tasksCompleted;
+  document.getElementById('summaryStrip').innerHTML = `
+    <div class="ledger-cell good"><div class="ledger-label">Total completed</div><div class="ledger-value">${totalCompleted}</div></div>
+    <div class="ledger-cell warn"><div class="ledger-label">Total pending</div><div class="ledger-value">${totalPending}</div></div>
+    <div class="ledger-cell"><div class="ledger-label">Completion rate</div><div class="ledger-value">${rate}%</div></div>
+    <div class="ledger-cell ${trendUp?'good':'bad'}"><div class="ledger-label">Trend</div><div class="ledger-value">${dailyReports.length>=2 ? (trendUp?'▲':'▼') : '—'}</div></div>`;
+
+  const chronological = [...dailyReports].sort((a,b)=> a.date < b.date ? -1 : 1);
+  if(trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('chartTrend').getContext('2d'), {
+    type:'line',
+    data:{ labels: chronological.map(r=>r.date), datasets:[
+      { label:'Tasks completed', data: chronological.map(r=>r.tasksCompleted), borderColor:'#3F7D52', backgroundColor:'rgba(63,125,82,.12)', tension:.3, fill:true },
+      { label:'Pending work', data: chronological.map(r=>r.pendingWork), borderColor:'#B9700C', backgroundColor:'rgba(185,112,12,.08)', tension:.3, fill:true }
+    ]},
+    options:{ plugins:{ legend:{ position:'bottom', labels:{font:{family:'Inter', size:10.5}, boxWidth:10} } },
+      scales:{ x:{ ticks:{font:{size:10}}, grid:{display:false} }, y:{ ticks:{font:{size:10}, stepSize:2}, grid:{color:'#EFECE0'} } },
+      maintainAspectRatio:false }
+  });
+}
+document.getElementById('dailyTbody').addEventListener('click', e=>{
+  const editId=e.target.dataset.editDr, delId=e.target.dataset.delDr;
+  if(editId){ const r=dailyReports.find(x=>x.id===editId); fillDailyForm(r); }
+  if(delId) openConfirm('daily', delId);
+});
+function fillDailyForm(r){
+  document.getElementById('drDate').value=r.date; document.getElementById('drDate').dataset.editId=r.id;
+  document.getElementById('drRecords').value=r.recordsProcessed;
+  document.getElementById('drDocs').value=r.docsVerified;
+  document.getElementById('drCalls').value=r.callsEmailsHandled;
+  document.getElementById('drTasksDone').value=r.tasksCompleted;
+  document.getElementById('drPending').value=r.pendingWork;
+  document.getElementById('drRemarks').value=r.remarks||'';
+  window.scrollTo({top:0, behavior:'smooth'});
+  toast('Editing entry for '+r.date+' — save to update.', '');
+}
+const dailyFields = ['drDate','drRecords','drDocs','drCalls','drTasksDone','drPending'];
+function validateDailyForm(){
+  let valid = true;
+  const date = document.getElementById('drDate').value;
+  const nums = ['drRecords','drDocs','drCalls','drTasksDone','drPending'];
+  const setValid=(id,ok)=>document.getElementById('f-'+id).classList.toggle('invalid', !ok);
+  setValid('drDate', !!date); valid = valid && !!date;
+  nums.forEach(id=>{
+    const v = document.getElementById(id).value;
+    const ok = v!=='' && Number(v)>=0;
+    setValid(id, ok); valid = valid && ok;
+  });
+  return valid;
+}
+document.getElementById('saveDailyBtn').addEventListener('click', ()=>{
+  if(!validateDailyForm()){ toast('Please fix the highlighted fields.', 'error'); return; }
+  const editId = document.getElementById('drDate').dataset.editId;
+  const data = {
+    date: document.getElementById('drDate').value,
+    recordsProcessed: Number(document.getElementById('drRecords').value),
+    docsVerified: Number(document.getElementById('drDocs').value),
+    callsEmailsHandled: Number(document.getElementById('drCalls').value),
+    tasksCompleted: Number(document.getElementById('drTasksDone').value),
+    pendingWork: Number(document.getElementById('drPending').value),
+    remarks: document.getElementById('drRemarks').value.trim(),
+  };
+  if(editId){ const idx=dailyReports.findIndex(r=>r.id===editId); dailyReports[idx] = {...dailyReports[idx], ...data}; toast('Daily report updated.', 'success'); delete document.getElementById('drDate').dataset.editId; }
+  else { const newId = 'DR-'+(dailyReports.length+1)+'-'+Date.now().toString().slice(-4); dailyReports.push({id:newId, ...data}); toast('Daily report saved.', 'success'); }
+  save();
+  document.getElementById('dailyForm').reset();
+  document.getElementById('drDate').value = todayStr();
+  dailyFields.forEach(f=>document.getElementById('f-'+f)?.classList.remove('invalid'));
+  renderDailyReport(); renderDashboard();
+});
+
+/* ============================================================
+   REPORTS (Daily / Weekly / Team-wise / Status-wise)
+   ============================================================ */
+function isoWeek(dateStr){
+  const dt = new Date(dateStr+'T00:00:00');
+  const target = new Date(dt.valueOf());
+  const dayNr = (dt.getDay()+6)%7;
+  target.setDate(target.getDate()-dayNr+3);
+  const firstThursday = new Date(target.getFullYear(),0,4);
+  const week = 1 + Math.round(((target-firstThursday)/86400000 - 3 + ((firstThursday.getDay()+6)%7))/7);
+  return target.getFullYear()+'-W'+String(week).padStart(2,'0');
+}
+function renderReportsView(){
+  document.getElementById('reportPanelTitle').textContent = { daily:'Daily report', weekly:'Weekly report', team:'Team-wise report', status:'Status-wise report' }[currentReportTab];
+  const body = document.getElementById('reportBody');
+  if(currentReportTab==='daily'){
+    const sorted=[...dailyReports].sort((a,b)=> a.date<b.date?1:-1);
+    body.innerHTML = `<table><thead><tr><th>Date</th><th>Records</th><th>Docs verified</th><th>Calls/emails</th><th>Tasks completed</th><th>Pending</th></tr></thead>
+      <tbody>${sorted.map(r=>`<tr><td>${r.date}</td><td>${r.recordsProcessed}</td><td>${r.docsVerified}</td><td>${r.callsEmailsHandled}</td><td>${r.tasksCompleted}</td><td>${r.pendingWork}</td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">No daily reports logged.</td></tr>'}</tbody></table>`;
+  } else if(currentReportTab==='weekly'){
+    const weeks = {};
+    dailyReports.forEach(r=>{ const w=isoWeek(r.date); weeks[w] = weeks[w] || {records:0,docs:0,calls:0,done:0,pending:0}; weeks[w].records+=r.recordsProcessed; weeks[w].docs+=r.docsVerified; weeks[w].calls+=r.callsEmailsHandled; weeks[w].done+=r.tasksCompleted; weeks[w].pending+=r.pendingWork; });
+    const keys = Object.keys(weeks).sort().reverse();
+    body.innerHTML = `<table><thead><tr><th>Week</th><th>Records</th><th>Docs verified</th><th>Calls/emails</th><th>Tasks completed</th><th>Pending</th></tr></thead>
+      <tbody>${keys.map(w=>`<tr><td>${w}</td><td>${weeks[w].records}</td><td>${weeks[w].docs}</td><td>${weeks[w].calls}</td><td>${weeks[w].done}</td><td>${weeks[w].pending}</td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">No data yet.</td></tr>'}</tbody></table>`;
+  } else if(currentReportTab==='team'){
+    body.innerHTML = `<table><thead><tr><th>Team member</th><th>Total tasks</th><th>Completed</th><th>Pending</th><th>In progress</th><th>Overdue</th></tr></thead>
+      <tbody>${TEAM.map(n=>{ const t=tasks.filter(x=>x.assignedTo===n);
+        return `<tr><td>${n}</td><td>${t.length}</td><td>${t.filter(x=>x.status==='Completed').length}</td><td>${t.filter(x=>x.status==='Pending'&&!isOverdue(x)).length}</td><td>${t.filter(x=>x.status==='In Progress'&&!isOverdue(x)).length}</td><td>${t.filter(isOverdue).length}</td></tr>`;
+      }).join('')}</tbody></table>`;
+  } else {
+    const statuses = ['Pending','In Progress','Completed','Overdue'];
+    body.innerHTML = `<table><thead><tr><th>Status</th><th>Count</th><th>% of total</th></tr></thead>
+      <tbody>${statuses.map(s=>{ const n=tasks.filter(t=>displayStatus(t)===s).length; const pct = tasks.length ? Math.round((n/tasks.length)*100) : 0;
+        return `<tr><td><span class="badge ${statusClass(s)}">${s}</span></td><td>${n}</td><td>${pct}%</td></tr>`; }).join('')}</tbody></table>`;
+  }
+}
+document.getElementById('reportSubtabs').addEventListener('click', e=>{
+  const btn = e.target.closest('.subtab'); if(!btn) return;
+  currentReportTab = btn.dataset.rep;
+  document.querySelectorAll('.subtab').forEach(b=>b.classList.toggle('active', b===btn));
+  renderReportsView();
+});
+
+function downloadCsv(content, filename){
+  const blob = new Blob([content], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
+  let csv='';
+  if(currentReportTab==='daily'){ csv='Date,Records,Docs Verified,Calls/Emails,Tasks Completed,Pending\n'; dailyReports.forEach(r=>csv+=`${r.date},${r.recordsProcessed},${r.docsVerified},${r.callsEmailsHandled},${r.tasksCompleted},${r.pendingWork}\n`); }
+  else if(currentReportTab==='weekly'){ const weeks={}; dailyReports.forEach(r=>{const w=isoWeek(r.date); weeks[w]=weeks[w]||{records:0,docs:0,calls:0,done:0,pending:0}; weeks[w].records+=r.recordsProcessed; weeks[w].docs+=r.docsVerified; weeks[w].calls+=r.callsEmailsHandled; weeks[w].done+=r.tasksCompleted; weeks[w].pending+=r.pendingWork;}); csv='Week,Records,Docs Verified,Calls/Emails,Tasks Completed,Pending\n'; Object.keys(weeks).sort().forEach(w=>csv+=`${w},${weeks[w].records},${weeks[w].docs},${weeks[w].calls},${weeks[w].done},${weeks[w].pending}\n`); }
+  else if(currentReportTab==='team'){ csv='Team Member,Total,Completed,Pending,In Progress,Overdue\n'; TEAM.forEach(n=>{const t=tasks.filter(x=>x.assignedTo===n); csv+=`${n},${t.length},${t.filter(x=>x.status==='Completed').length},${t.filter(x=>x.status==='Pending'&&!isOverdue(x)).length},${t.filter(x=>x.status==='In Progress'&&!isOverdue(x)).length},${t.filter(isOverdue).length}\n`;}); }
+  else { csv='Status,Count,Percent\n'; ['Pending','In Progress','Completed','Overdue'].forEach(s=>{const n=tasks.filter(t=>displayStatus(t)===s).length; const pct=tasks.length?Math.round((n/tasks.length)*100):0; csv+=`${s},${n},${pct}%\n`;}); }
+  downloadCsv(csv, `shakha_${currentReportTab}_report_${todayStr()}.csv`);
+  toast('Report exported as CSV.', 'success');
+});
+document.getElementById('printBtn').addEventListener('click', ()=>window.print());
+document.getElementById('exportPdfBtn').addEventListener('click', ()=>{
+  try{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(16); doc.text('Shakha — Branch Operations Summary', 14, 18);
+    doc.setFontSize(10); doc.text('Generated: ' + new Date().toLocaleString('en-IN'), 14, 25);
+    let y = 36;
+    doc.setFontSize(12); doc.text('Task overview', 14, y); y+=7;
+    doc.setFontSize(10);
+    ['Pending','In Progress','Completed','Overdue'].forEach(s=>{
+      const n = tasks.filter(t=>displayStatus(t)===s).length;
+      doc.text(`${s}: ${n}`, 14, y); y+=6;
+    });
+    y+=4; doc.setFontSize(12); doc.text('Daily report totals', 14, y); y+=7; doc.setFontSize(10);
+    const totalCompleted = dailyReports.reduce((s,r)=>s+Number(r.tasksCompleted),0);
+    const totalPending = dailyReports.reduce((s,r)=>s+Number(r.pendingWork),0);
+    doc.text(`Total tasks completed (logged): ${totalCompleted}`, 14, y); y+=6;
+    doc.text(`Total pending work (logged): ${totalPending}`, 14, y); y+=6;
+    doc.save(`shakha_summary_${todayStr()}.pdf`);
+    toast('PDF summary downloaded.', 'success');
+  } catch(err){ toast('PDF export unavailable in this browser.', 'error'); }
+});
+
+/* ---------- Reset ---------- */
+document.getElementById('resetDataBtn').addEventListener('click', ()=>{
+  localStorage.removeItem(LS_SEEDED); seedData(); toast('Sample data restored.', 'success'); goTo('dashboard');
+});
+
+/* ---------- Init ---------- */
+function tick(){ document.getElementById('topDate').textContent = new Date().toLocaleString('en-IN', {dateStyle:'medium', timeStyle:'short'}); }
+load(); tick(); setInterval(tick, 60000);
+goTo('dashboard');
+</script>
+</body>
+</html>
